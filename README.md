@@ -1,60 +1,113 @@
-# Wordle solver that uses uv's dependency resolver
+# wordle
 
-Code for my blog post, [Solving Wordle with uv's dependency resolver](https://mildbyte.xyz/blog/solving-wordle-with-uv-dependency-resolver/) - read how it works there
+A Wordle solver that explains *why* it picks each guess. Built around
+frequency-weighted information-gain — but the point is as much to teach
+the strategy as to run it.
 
-## Running
+## What it does
 
-Get [`uv`](https://docs.astral.sh/uv/) and run the solver as follows:
+- **Play mode** — assists you in a live Wordle game. Suggests five ranked
+  candidates, lets you accept or override, then parses your feedback.
+- **Strategy explanations** — `/why` shows letter coverage in the remaining
+  candidate set, the most-likely feedback outcomes with resulting
+  `|S_next|`, and a context-aware strategy note (e.g. "Early game: spread
+  across common letters, not guess the answer").
+- **Self-play and bench** — solver guesses a known or random answer; or
+  iterates the full 2,310-word answer list and prints a guess-count
+  histogram.
+- **Hard mode** — toggle with `--hard`; enforces green-stays-put and
+  yellow-must-appear (with correct multiplicity) on the guess set.
+
+## Install
 
 ```
-uv run main.py run --no-suppress --no-emit-project
-
-Using CPython 3.10.12 interpreter at: /usr/bin/python
-warning: No `requires-python` value found in the workspace. Defaulting to `>=3.10`.
-Resolved 33 packages in 579ms
-GUESS: later
-> YYY..
-Using CPython 3.10.12 interpreter at: /usr/bin/python
-warning: No `requires-python` value found in the workspace. Defaulting to `>=3.10`.
-Resolved 41 packages in 1.79s
-Added wordle-a-in-1345 v1
-Added wordle-a-in-2 v0
-Updated wordle-a-poss v8 -> v2
-Added wordle-e-in-45 v0
-Updated wordle-e-poss v2 -> v4
-Added wordle-l-in-1 v0
-Added wordle-l-in-2345 v1
-Updated wordle-l-poss v16 -> v1
-Updated wordle-pos-1 v12 -> v19
-Updated wordle-pos-2 v1 -> v20
-Updated wordle-pos-3 v20 -> v5
-Updated wordle-pos-4 v5 -> v1
-Updated wordle-pos-5 v18 -> v12
-Added wordle-r-in-45 v0
-Updated wordle-r-poss v1 -> v0
-Updated wordle-s-poss v0 -> v16
-Added wordle-t-in-1245 v1
-Added wordle-t-in-3 v0
-Updated wordle-t-poss v4 -> v8
-Updated wordle-word v2308 -> v2296
-GUESS: steal
-> GG.YG
-Using CPython 3.10.12 interpreter at: /usr/bin/python
-warning: No `requires-python` value found in the workspace. Defaulting to `>=3.10`.
-Resolved 47 packages in 1.23s
-Added wordle-a-in-3 v1
-Added wordle-a-in-4 v0
-Updated wordle-a-poss v2 -> v4
-Added wordle-e-in-3 v0
-Updated wordle-e-poss v4 -> v0
-Added wordle-l-in-5 v1
-Updated wordle-l-poss v1 -> v3
-Updated wordle-pos-3 v5 -> v1
-Updated wordle-pos-4 v1 -> v12
-Added wordle-s-in-1 v1
-Added wordle-t-in-2 v1
-Updated wordle-word v2296 -> v531
-GUESS: stall
-> GGGGG
-Hooray!
+uv sync
 ```
+
+## Usage
+
+```
+uv run wordle play                    # assist in a real Wordle game
+uv run wordle play --hard             # hard mode
+uv run wordle selfplay abbey          # watch the solver guess a word
+uv run wordle selfplay --seed 7       # random secret
+uv run wordle bench                   # distribution over all answers
+uv run wordle bench --sample 200      # quick sample
+uv run wordle bench --opener salet    # force a starting word
+```
+
+During play, at the guess prompt:
+
+- blank → pick the top-ranked suggestion
+- any 5-letter word → override
+- `/why [N]` → full rationale for suggestion #N (default #1)
+- `/cands` → list all remaining candidates
+- `/quit`
+
+Feedback format: 5 characters of `g` (green) / `y` (yellow) / `b` (grey),
+case-insensitive; `.` or `-` also work for grey. Example: `bybbg`.
+
+## How it works
+
+For each possible guess `g` and the current set of still-possible answers
+`S`:
+
+1. Partition `S` into up to 243 buckets by the feedback pattern each answer
+   would produce.
+2. Weight each answer by its prior — `zipf_frequency(w, 'en')` raised to
+   `α` (default 1.0) — so common words count more. This matches NYT's
+   observed bias toward everyday words.
+3. Score each guess by the weighted entropy of its bucket distribution.
+4. Tiebreak in favour of guesses that are themselves possible answers
+   (could win outright).
+5. When `|S| ≤ 2`, restrict the ranking to `S` — we should be trying to
+   win this turn.
+
+A precomputed `|guesses| × |answers|` `uint8` pattern table (≈33 MB)
+makes each scoring pass a handful of NumPy `bincount` calls.
+
+## Benchmark
+
+On the 2,310-word answer list, default α=1.0:
+
+```
+guesses   count   histogram
+      2      61   ██
+      3    1068   ███████████████████████████████████████
+      4    1086   ████████████████████████████████████████
+      5      92   ███
+      6       3
+mean 3.527  median 4  max 6  fails 0/2310
+```
+
+For reference: the proven optimum under uniform priors is 3.42 (Alex
+Selby, SALET-rooted decision tree). Frequency-weighted greedy solvers
+generally land in the 3.4–3.6 range.
+
+## Layout
+
+```
+src/wordle/
+  patterns.py   feedback encoding + vectorised |G|×|A| table builder
+  lists.py      word-list loading, frequency priors, cache
+  scoring.py    entropy, endgame, hard-mode filter
+  solver.py     SolverState (mask + history) and GameData
+  explain.py    rationale + teaching notes
+  play.py       self-play driver with memoised top-picks
+  cli.py        typer entry point
+data/
+  answers.txt   2,310 candidate answers
+  guesses.txt   14,854 NYT valid-guess list
+  patterns.npy  cached pattern table (built on first run)
+tests/          40 tests, pytest
+```
+
+## Development
+
+```
+uv run pytest
+```
+
+Word lists are vendored from:
+- [tabatkins/wordle-list](https://github.com/tabatkins/wordle-list) — NYT valid guesses
+- Original Wordle answer list (pre-NYT, 2,310 words)

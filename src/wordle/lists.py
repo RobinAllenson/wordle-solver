@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
 
 from wordle.patterns import build_pattern_table  # noqa: F401 (re-exported use)
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+# Word lists ship inside the package so `pip install` from a git URL works.
+PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
+
+# Pattern tables are build artifacts — cache them outside the package so it
+# stays read-only when installed. Honor WORDLE_CACHE_DIR for explicit control.
+CACHE_DIR = Path(os.environ.get("WORDLE_CACHE_DIR") or (Path.home() / ".cache" / "wordle"))
 
 
 def _load_word_file(path: Path) -> list[str]:
@@ -22,8 +28,8 @@ def load_lists(
     answers_path: Path | None = None,
 ) -> tuple[list[str], list[str]]:
     """Return (guesses, answers). Both sorted; answers ⊆ guesses."""
-    guesses_path = guesses_path or (DATA_DIR / "guesses.txt")
-    answers_path = answers_path or (DATA_DIR / "answers.txt")
+    guesses_path = guesses_path or (PACKAGE_DATA_DIR / "guesses.txt")
+    answers_path = answers_path or (PACKAGE_DATA_DIR / "answers.txt")
     answers = sorted(set(_load_word_file(answers_path)))
     guesses = sorted(set(_load_word_file(guesses_path)) | set(answers))
     return guesses, answers
@@ -56,7 +62,7 @@ def load_pattern_table(
 
     Cache validity is checked by shape only; delete the file if you change lists.
     """
-    cache_path = cache_path or (DATA_DIR / "patterns.npy")
+    cache_path = cache_path or (CACHE_DIR / "patterns.npy")
     expected_shape = (len(guesses), len(answers))
     if cache_path.exists():
         table = np.load(cache_path)
@@ -91,7 +97,7 @@ def load_broad_table(
     ~220 MB uint8, ~20s to build. Used when the real NYT answer might be
     outside the curated 2,310-word pool.
     """
-    cache_path = cache_path or (DATA_DIR / "patterns_broad.npy")
+    cache_path = cache_path or (CACHE_DIR / "patterns_broad.npy")
     expected_shape = (len(guesses), len(guesses))
     if cache_path.exists():
         table = np.load(cache_path)

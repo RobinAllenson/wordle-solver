@@ -9,8 +9,4 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 
-data/patterns.npy
-data/patterns_broad.npy
-data/priors.npy
-
 robinallenson.com/

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wordle.patterns import build_pattern_table
+from wordle.patterns import build_pattern_table  # noqa: F401 (re-exported use)
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -79,3 +79,29 @@ def load_pattern_table(
 def word_index(words: list[str]) -> dict[str, int]:
     """Map word -> index in list."""
     return {w: i for i, w in enumerate(words)}
+
+
+def load_broad_table(
+    guesses: list[str],
+    cache_path: Path | None = None,
+    verbose: bool = False,
+) -> np.ndarray:
+    """Build/load a |G|x|G| pattern table — every guess vs every guess.
+
+    ~220 MB uint8, ~20s to build. Used when the real NYT answer might be
+    outside the curated 2,310-word pool.
+    """
+    cache_path = cache_path or (DATA_DIR / "patterns_broad.npy")
+    expected_shape = (len(guesses), len(guesses))
+    if cache_path.exists():
+        table = np.load(cache_path)
+        if table.shape == expected_shape and table.dtype == np.uint8:
+            if verbose:
+                print(f"Loaded broad pattern table from {cache_path}")
+            return table
+    if verbose:
+        print(f"Building broad pattern table {expected_shape} (one-time)…")
+    table = build_pattern_table(guesses, guesses)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(cache_path, table)
+    return table

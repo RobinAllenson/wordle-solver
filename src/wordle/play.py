@@ -52,7 +52,7 @@ def selfplay(
             else:
                 word = None  # type: ignore[assignment]
             if word is None:
-                ranked = state.rank(top_n=1)
+                ranked, _ = state.rank(top_n=1)
                 if not ranked:
                     return SelfplayResult(secret, words, patterns, solved=False)
                 word = game.guesses[ranked[0][0]]

@@ -176,6 +176,127 @@ def _teaching_note(state: SolverState, stats: GuessStats) -> str:
     )
 
 
+def analyze_word(
+    state: SolverState, word: str, all_scores: np.ndarray
+) -> tuple[GuessStats, int]:
+    """Look up score for any word in the guess list and analyze it.
+
+    Returns (stats, rank) where rank is 1-indexed position in descending
+    score order across all guesses.
+    """
+    gi = state.game.g_idx[word]
+    score = float(all_scores[gi])
+    stats = analyze_guess(state, gi, score)
+    order = np.argsort(-all_scores, kind="stable")
+    rank = int(np.where(order == gi)[0][0]) + 1
+    return stats, rank
+
+
+def _compare_verdict(picked: GuessStats, top: GuessStats) -> str:
+    """Teaching-oriented one-liner explaining why top beats picked."""
+    if picked.word == top.word:
+        return ""  # shouldn't happen; caller guards
+    bits_diff = top.bits - picked.bits
+    word_t = top.word.upper()
+    word_p = picked.word.upper()
+
+    if bits_diff < 0.05:
+        if top.is_in_S and not picked.is_in_S:
+            return (
+                f"Nearly identical information; {word_t} is itself a candidate "
+                f"so could win outright, while {word_p} is pure reconnaissance."
+            )
+        if picked.is_in_S and not top.is_in_S:
+            return (
+                f"Very close on information. Your {word_p} has a shot at "
+                f"solving this turn — that's often the right call near the end."
+            )
+        return f"Margin is tiny. Either choice is defensible."
+
+    if picked.worst_next >= top.worst_next * 1.8:
+        return (
+            f"{word_t} has a smaller worst-case ({top.worst_next} vs "
+            f"{picked.worst_next}) — safer if the feedback lands badly."
+        )
+
+    # Compare letter coverage: find a letter in top's guess that's more common
+    # than any letter in picked's guess
+    best_top = max(top.letter_coverage, key=lambda x: x[1]) if top.letter_coverage else None
+    best_picked = max(picked.letter_coverage, key=lambda x: x[1]) if picked.letter_coverage else None
+    if best_top and best_picked and best_top[1] > best_picked[1] + 0.1:
+        return (
+            f"{word_t} tests {best_top[0].upper()} which appears in "
+            f"{best_top[1]:.0%} of remaining candidates — denser coverage "
+            f"than {word_p}'s best letter "
+            f"({best_picked[0].upper()} at {best_picked[1]:.0%})."
+        )
+
+    ratio = picked.expected_next / max(top.expected_next, 1e-9)
+    return (
+        f"{word_t} splits ~{ratio:.1f}× harder: expect "
+        f"~{top.expected_next:.0f} candidates left vs ~{picked.expected_next:.0f} "
+        f"for {word_p}."
+    )
+
+
+def render_comparison(
+    picked: GuessStats, picked_rank: int, top: GuessStats
+) -> Group:
+    """Side-by-side comparison of user's pick against the top suggestion."""
+    tbl = Table(
+        title=f"{picked.word.upper()} (your pick, rank #{picked_rank}) vs "
+        f"{top.word.upper()} (top)",
+        title_style="dim",
+        show_header=True,
+        header_style="dim",
+        show_edge=False,
+    )
+    tbl.add_column("")
+    tbl.add_column(picked.word.upper(), justify="right")
+    tbl.add_column(top.word.upper(), justify="right")
+    tbl.add_column("Δ", justify="right", style="dim")
+
+    tbl.add_row(
+        "bits",
+        f"{picked.bits:.3f}",
+        f"{top.bits:.3f}",
+        f"+{top.bits - picked.bits:.3f}",
+    )
+    tbl.add_row(
+        "expected |S_next|",
+        f"~{picked.expected_next:.1f}",
+        f"~{top.expected_next:.1f}",
+        f"{top.expected_next - picked.expected_next:+.1f}",
+    )
+    tbl.add_row(
+        "worst |S_next|",
+        str(picked.worst_next),
+        str(top.worst_next),
+        f"{top.worst_next - picked.worst_next:+d}",
+    )
+    tbl.add_row(
+        "buckets",
+        str(picked.n_buckets),
+        str(top.n_buckets),
+        f"{top.n_buckets - picked.n_buckets:+d}",
+    )
+    tbl.add_row(
+        "∈ S",
+        "[green]✓[/green]" if picked.is_in_S else "—",
+        "[green]✓[/green]" if top.is_in_S else "—",
+        "",
+    )
+
+    verdict = _compare_verdict(picked, top)
+    verdict_panel = Panel(
+        Text(verdict, style="italic"),
+        title="[yellow]why[/yellow]",
+        border_style="dim",
+        padding=(0, 1),
+    )
+    return Group(tbl, Text(), verdict_panel)
+
+
 def detailed_explanation(
     state: SolverState, stats: GuessStats
 ) -> Group:

@@ -102,11 +102,10 @@ class TestRankGuesses:
     def test_endgame_restricts_to_S(self, game):
         """When |S|=2, only those 2 candidates should appear in ranking."""
         mask = np.zeros(len(game["answers"]), dtype=bool)
-        # pick two specific answers
         i1, i2 = 10, 500
         mask[i1] = True
         mask[i2] = True
-        ranked = rank_guesses(
+        ranked, _ = rank_guesses(
             game["table"], mask, game["priors"], game["ans_in_guess"], top_n=5
         )
         assert len(ranked) == 2
@@ -116,21 +115,27 @@ class TestRankGuesses:
     def test_single_candidate_returns_that_word(self, game):
         mask = np.zeros(len(game["answers"]), dtype=bool)
         mask[42] = True
-        ranked = rank_guesses(
+        ranked, _ = rank_guesses(
             game["table"], mask, game["priors"], game["ans_in_guess"], top_n=5
         )
         assert len(ranked) == 1
         assert game["guesses"][ranked[0][0]] == game["answers"][42]
 
     def test_candidate_bonus_breaks_ties(self, game):
-        """When |S|=small, a guess that's in S should rank ahead of an equally-
-        scoring guess that isn't. Not always triggerable but should not crash."""
         mask = np.zeros(len(game["answers"]), dtype=bool)
         mask[:4] = True
-        ranked = rank_guesses(
+        ranked, _ = rank_guesses(
             game["table"], mask, game["priors"], game["ans_in_guess"], top_n=3
         )
         assert len(ranked) >= 1
+
+    def test_full_scores_returned(self, game):
+        """The full scores array should be same length as guesses."""
+        mask = np.ones(len(game["answers"]), dtype=bool)
+        _, scores = rank_guesses(
+            game["table"], mask, game["priors"], game["ans_in_guess"], top_n=5
+        )
+        assert scores.shape == (len(game["guesses"]),)
 
 
 class TestHardModeMask:

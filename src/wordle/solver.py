@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from wordle.lists import (
+    load_broad_table,
     load_lists,
     load_pattern_table,
     load_priors,
@@ -42,6 +43,24 @@ class GameData:
         ans_in_guess = np.array([g_idx[a] for a in answers], dtype=np.int64)
         return cls(guesses, answers, table, priors, g_idx, a_idx, ans_in_guess)
 
+    @classmethod
+    def load_broad(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
+        """Broader answer pool: every valid guess is a candidate answer.
+
+        Use when the real answer may lie outside the curated 2,310 list
+        (e.g. a post-NYT-curation word). Slower but always correct."""
+        guesses, _ = load_lists()
+        table = load_broad_table(guesses, verbose=verbose)
+        priors = load_priors(guesses, alpha=alpha)
+        g_idx = word_index(guesses)
+        a_idx = g_idx
+        ans_in_guess = np.arange(len(guesses), dtype=np.int64)
+        return cls(guesses, guesses, table, priors, g_idx, a_idx, ans_in_guess)
+
+    @property
+    def is_broad(self) -> bool:
+        return len(self.answers) == len(self.guesses)
+
 
 @dataclass
 class SolverState:
@@ -76,7 +95,10 @@ class SolverState:
             return hard_mode_guess_mask(self.game.guesses, self.history)
         return None
 
-    def rank(self, top_n: int = 5) -> list[tuple[int, float]]:
+    def rank(
+        self, top_n: int = 5
+    ) -> tuple[list[tuple[int, float]], np.ndarray]:
+        """Return (top-N (idx, score), full scores array)."""
         return rank_guesses(
             self.game.table,
             self.mask,
@@ -97,3 +119,21 @@ class SolverState:
     def is_broken(self) -> bool:
         """Candidate set empty — user must have entered wrong feedback."""
         return self.candidates_count == 0
+
+    def feedback_leaves_candidates(
+        self, guess_word: str, pattern: int
+    ) -> bool:
+        """Would applying this (guess, pattern) leave at least one candidate?"""
+        if guess_word not in self.game.g_idx:
+            return False
+        gi = self.game.g_idx[guess_word]
+        return bool((self.mask & (self.game.table[gi] == pattern)).any())
+
+    def switch_game(self, new_game: GameData) -> None:
+        """Replace game data (e.g. narrow → broad) and rebuild mask from history."""
+        self.game = new_game
+        self.mask = np.ones(len(new_game.answers), dtype=bool)
+        for word, pattern in self.history:
+            if word in new_game.g_idx:
+                gi = new_game.g_idx[word]
+                self.mask = self.mask & (new_game.table[gi] == pattern)

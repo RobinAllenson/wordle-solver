@@ -76,16 +76,20 @@ def rank_guesses(
     guess_filter: np.ndarray | None = None,
     top_n: int = 10,
     candidate_bonus: float = 1e-3,
-) -> list[tuple[int, float]]:
-    """Return list of (guess_idx, score) in descending score order.
+) -> tuple[list[tuple[int, float]], np.ndarray]:
+    """Score every guess, return (top-N list, full adjusted scores array).
+
+    The returned scores array has endgame restrictions, candidate-bonus, and
+    hard-mode filter already applied — use it directly for `/why WORD` and
+    rank lookups without recomputing.
 
     Endgame (|S|<=2): restrict to in-S candidates so we can win outright.
-    Else: entropy with a small prior-weighted bonus for in-S guesses (breaks
-    ties toward winning when both options are otherwise equal).
+    Else: entropy with a small prior-weighted bonus for in-S guesses.
     """
+    n_g = table.shape[0]
     s_size = int(mask.sum())
     if s_size == 0:
-        return []
+        return [], np.full(n_g, -np.inf, dtype=np.float64)
 
     scores = entropy_scores(table, mask, priors)
     in_s_guess_idx = ans_in_guess[mask]
@@ -93,8 +97,6 @@ def rank_guesses(
     if s_size <= 2:
         restricted = np.full_like(scores, -np.inf)
         restricted[in_s_guess_idx] = scores[in_s_guess_idx]
-        # With 2 candidates both score the same (both split 2->{1,1} or resolve
-        # fully). Tiebreak by prior so we guess the likelier one first.
         restricted[in_s_guess_idx] += candidate_bonus * priors[mask]
         scores = restricted
     else:
@@ -105,7 +107,8 @@ def rank_guesses(
         scores = np.where(guess_filter, scores, -np.inf)
 
     order = np.argsort(-scores, kind="stable")[:top_n]
-    return [(int(i), float(scores[i])) for i in order if scores[i] > -np.inf]
+    top = [(int(i), float(scores[i])) for i in order if scores[i] > -np.inf]
+    return top, scores
 
 
 def hard_mode_guess_mask(

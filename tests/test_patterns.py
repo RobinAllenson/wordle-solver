@@ -18,7 +18,7 @@ from wordle.patterns import (
 
 def pat(digits: list[int]) -> int:
     """Helper: build pattern from explicit digits at positions 0..4."""
-    return sum(d * (3 ** i) for i, d in enumerate(digits))
+    return sum(d * (3**i) for i, d in enumerate(digits))
 
 
 class TestComputePattern:
@@ -27,9 +27,7 @@ class TestComputePattern:
 
     def test_all_grey(self):
         # no shared letters
-        assert compute_pattern("fuzzy", "crank") == pat(
-            [GREY, GREY, GREY, GREY, GREY]
-        )
+        assert compute_pattern("fuzzy", "crank") == pat([GREY, GREY, GREY, GREY, GREY])
 
     def test_single_yellow(self):
         # guess "apple" vs answer "grape":

@@ -20,7 +20,7 @@ class SelfplayResult:
         return len(self.words)
 
 
-HistoryKey = tuple[tuple[str, ...], tuple[int, ...], bool]
+HistoryKey = tuple[str, tuple[str, ...], tuple[int, ...], bool]
 
 
 def selfplay(
@@ -44,7 +44,7 @@ def selfplay(
         else:
             key: HistoryKey | None = None
             if cache is not None:
-                key = (tuple(words), tuple(patterns), hard_mode)
+                key = (game.fingerprint, tuple(words), tuple(patterns), hard_mode)
                 if key in cache:
                     word = cache[key]
                 else:

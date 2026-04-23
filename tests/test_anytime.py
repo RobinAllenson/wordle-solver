@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 import numpy as np
@@ -85,8 +86,20 @@ class TestAnytimeWorker:
         state.mask[0] = True
         state.mask[1] = True
         worker = AnytimeWorker(state)
+        worker._cache[123] = ([(0, 1.0)], np.array([1.0]))
         worker.start(game.g_idx["tiare"])
         assert worker._thread is None
+        assert worker.populated == 0
+        assert worker.lookup(123) is None
+
+    def test_old_generation_cannot_write_cache(self, game):
+        """A worker from a previous turn must not write into current cache."""
+        state = SolverState(game)
+        state.mask[:] = False
+        state.mask[:3] = True
+        worker = AnytimeWorker(state)
+        worker._generation = 2
+        worker._run(game.g_idx["tiare"], generation=1, stop_event=threading.Event())
         assert worker.populated == 0
 
     def test_restart_wipes_cache(self, game):
@@ -118,6 +131,7 @@ class TestAnytimeWorker:
 
         # Pick a pattern where hard mode bites: "bbbbg" means E pinned at pos 4
         from wordle.patterns import encode_feedback
+
         pat = encode_feedback("bbbbg")
         cached = worker.lookup(pat)
         if cached is None:

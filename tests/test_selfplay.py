@@ -37,6 +37,17 @@ class TestSelfplay:
         assert a.words == b.words
         assert len(cache) > 0
 
+    def test_cache_is_scoped_to_game_fingerprint(self, game):
+        cache: dict = {}
+        selfplay(game, "abbey", cache=cache)
+
+        uniform_game = GameData.load(alpha=0.0)
+        selfplay(uniform_game, "abbey", cache=cache)
+
+        fingerprints = {key[0] for key in cache}
+        assert game.fingerprint in fingerprints
+        assert uniform_game.fingerprint in fingerprints
+
     def test_hard_mode_solves(self, game):
         for secret in ["crane", "abbey"]:
             result = selfplay(game, secret, hard_mode=True)
@@ -59,6 +70,7 @@ class TestExplainStats:
         assert str(one_liner(stats))
         # detailed renders without error
         _ = detailed_explanation(state, stats)
+
 
 class TestFeedbackValidation:
     def test_detects_inconsistent_feedback(self, game):
@@ -109,7 +121,7 @@ class TestExplainAfterNarrowing:
         state = SolverState(game)
         # Apply CRANE -> pattern for "abbey"
         from wordle.patterns import compute_pattern
-        crane_idx = game.g_idx["crane"]
+
         p = compute_pattern("crane", "abbey")
         state.apply("crane", p)
         ranked, _ = state.rank(top_n=3)

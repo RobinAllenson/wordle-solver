@@ -39,7 +39,9 @@ class TestApplyFeedback:
         mask = np.ones(len(game["answers"]), dtype=bool)
         crane_idx = game["g_idx"]["crane"]
         # if we guess crane and get all green, only crane remains (if in answers)
-        ans_crane = game["answers"].index("crane") if "crane" in game["answers"] else None
+        ans_crane = (
+            game["answers"].index("crane") if "crane" in game["answers"] else None
+        )
         if ans_crane is not None:
             all_green = 242
             new_mask = apply_feedback(mask, game["table"], crane_idx, all_green)
@@ -73,8 +75,19 @@ class TestEntropyScores:
         top20 = [game["guesses"][i] for i in ranked[:20]]
         # Under weighted priors, SALET/SOARE/TRACE/CRANE/SLATE/RAISE should all
         # score well. We don't commit to which is #1, just that one of them is.
-        strong = {"salet", "soare", "trace", "crane", "slate", "raise", "tares", "reast"}
-        assert set(top20) & strong, f"expected a strong opener in top20, got {top20[:5]}"
+        strong = {
+            "salet",
+            "soare",
+            "trace",
+            "crane",
+            "slate",
+            "raise",
+            "tares",
+            "reast",
+        }
+        assert set(top20) & strong, (
+            f"expected a strong opener in top20, got {top20[:5]}"
+        )
 
     def test_entropy_is_nonneg(self, game):
         mask = np.ones(len(game["answers"]), dtype=bool)
@@ -161,18 +174,35 @@ class TestHardModeMask:
         past = [("crane", encode_feedback("ybbbb"))]
         mask = hard_mode_guess_mask(game["guesses"], past)
         allowed = [game["guesses"][i] for i in range(len(game["guesses"])) if mask[i]]
-        assert all("c" in w for w in allowed[:50])
+        assert all("c" in w for w in allowed)
+        assert all(w[0] != "c" for w in allowed)
+
+    def test_yellow_forbids_same_position(self):
+        guesses = ["cigar", "panic", "cacao"]
+        past = [("crane", encode_feedback("ybbbb"))]
+        mask = hard_mode_guess_mask(guesses, past)
+        assert mask.tolist() == [False, True, False]
 
     def test_double_yellow_requires_count(self):
         # Synthetic: guess "lolls" with feedback "ybybb".
         # L@0 yellow, O@1 grey, L@2 yellow, L@3 grey, S@4 grey.
-        # per-turn: L=2 (two yellows), no other requirement. Next guess needs >=2 Ls.
-        guesses = ["hello", "llama", "glass", "cello", "hoopy", "filly", "lolly"]
+        # per-turn: L=2 (two yellows). Next guess needs >=2 Ls, with no L
+        # at positions 0 or 2.
+        guesses = [
+            "algal",
+            "flail",
+            "llama",
+            "glass",
+            "cello",
+            "hoopy",
+            "filly",
+            "lolly",
+        ]
         past = [("lolls", encode_feedback("ybybb"))]
         mask = hard_mode_guess_mask(guesses, past)
-        # hello 2L ok, llama 2L ok, glass 1L fail, cello 2L ok, hoopy 0L fail,
-        # filly 2L ok, lolly 3L ok
-        assert mask.tolist() == [True, True, False, True, False, True, True]
+        # algal/flail have 2Ls away from positions 0 and 2; the rest either
+        # lack two Ls or reuse a yellow slot.
+        assert mask.tolist() == [True, True, False, False, False, False, False, False]
 
     def test_yellow_adds_letter_constraint_only(self):
         # lone yellow adds presence requirement; greys do NOT forbid reuse.

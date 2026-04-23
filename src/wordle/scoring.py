@@ -118,26 +118,29 @@ def hard_mode_guess_mask(
     """Hard-mode validity mask over guesses given past (word, pattern) turns.
 
     Rules enforced: greens must stay in place; yellow letters must appear
-    somewhere in the next guess. Grey letters impose no constraint. Multiplicity
-    of yellow letters is tracked per-turn (if two Os turned yellow in one guess,
-    the next guess must contain at least two Os).
+    somewhere in the next guess, but not in the same position where they were
+    yellow. Grey letters impose no constraint. Multiplicity of yellow letters
+    is tracked per-turn (if two Os turned yellow in one guess, the next guess
+    must contain at least two Os).
     """
     n = len(guesses)
     if not past:
         return np.ones(n, dtype=bool)
 
     green_pos: dict[int, str] = {}
+    yellow_forbidden_pos: dict[int, set[str]] = {}
     # Aggregate minimum required count of each letter, taken as the max across
     # turns (each turn's yellow-count is a lower bound on true count).
     required: dict[str, int] = {}
     for word, pattern in past:
         per_turn: dict[str, int] = {}
         for k in range(5):
-            d = (pattern // (3 ** k)) % 3
+            d = (pattern // (3**k)) % 3
             if d == GREEN:
                 green_pos[k] = word[k]
                 per_turn[word[k]] = per_turn.get(word[k], 0) + 1
             elif d == YELLOW:
+                yellow_forbidden_pos.setdefault(k, set()).add(word[k])
                 per_turn[word[k]] = per_turn.get(word[k], 0) + 1
         for ch, c in per_turn.items():
             if c > required.get(ch, 0):
@@ -146,6 +149,8 @@ def hard_mode_guess_mask(
     mask = np.empty(n, dtype=bool)
     for i, w in enumerate(guesses):
         ok = all(w[k] == c for k, c in green_pos.items())
+        if ok:
+            ok = all(w[k] not in chars for k, chars in yellow_forbidden_pos.items())
         if ok and required:
             for ch, need in required.items():
                 if w.count(ch) < need:

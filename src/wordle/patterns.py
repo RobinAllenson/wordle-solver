@@ -65,7 +65,7 @@ def encode_feedback(s: str) -> int:
     for i, c in enumerate(s):
         if c not in digit_map:
             raise ValueError(f"invalid feedback char {c!r} at position {i}")
-        total += digit_map[c] * (3 ** i)
+        total += digit_map[c] * (3**i)
     return total
 
 

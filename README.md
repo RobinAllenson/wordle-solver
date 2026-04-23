@@ -99,7 +99,7 @@ data/
   answers.txt   2,310 candidate answers
   guesses.txt   14,854 NYT valid-guess list
   patterns.npy  cached pattern table (built on first run)
-tests/          40 tests, pytest
+tests/          pytest suite
 ```
 
 ## Development

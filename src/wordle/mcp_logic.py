@@ -223,11 +223,11 @@ def _stats_payload(stats: GuessStats, rank: int) -> dict[str, Any]:
         "word": stats.word,
         "rank": rank,
         "bits": round(float(stats.bits), 6),
-        "candidate_count": stats.n_candidates,
+        "candidate_count": int(stats.n_candidates),
         "expected_remaining": round(float(stats.expected_next), 6),
-        "worst_case_remaining": stats.worst_next,
-        "feedback_buckets": stats.n_buckets,
-        "is_candidate": stats.is_in_S,
+        "worst_case_remaining": int(stats.worst_next),
+        "feedback_buckets": int(stats.n_buckets),
+        "is_candidate": bool(stats.is_in_S),
         "win_probability": round(float(stats.win_prob), 6),
         "letter_coverage": [
             {"letter": letter, "coverage": round(float(frac), 6)}
@@ -236,7 +236,7 @@ def _stats_payload(stats: GuessStats, rank: int) -> dict[str, Any]:
         "likely_feedback": [
             {
                 "pattern": decode_pattern(pattern),
-                "candidate_count": count,
+                "candidate_count": int(count),
                 "probability": round(float(prob), 6),
             }
             for pattern, count, prob in stats.top_patterns

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 from wordle.lists import word_index
@@ -58,6 +60,7 @@ def test_compare_guess_shape():
     assert response["guess"]["word"] == "slate"
     assert response["guess"]["rank"] >= 1
     assert len(response["suggestions"]) == 3
+    json.dumps(response)
 
 
 def test_compare_flags_hard_mode_violation():
@@ -97,3 +100,4 @@ def test_include_all_candidates_can_return_large_lists():
     assert response["candidates"]["count"] == 2310
     assert len(response["candidates"]["words"]) == 2310
     assert response["candidates"]["truncated"] is False
+    json.dumps(response)

@@ -19,6 +19,14 @@ dev = [
 
 [project.scripts]
 wordle = "wordle.cli:app"
+wordle-mcp = "wordle.mcp_server:main"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.27",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
 
 [build-system]
 requires = ["hatchling"]

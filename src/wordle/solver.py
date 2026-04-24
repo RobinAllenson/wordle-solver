@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 
 import numpy as np
 
@@ -11,6 +12,7 @@ from wordle.lists import (
     load_lists,
     load_pattern_table,
     load_priors,
+    word_list_fingerprint,
     word_index,
 )
 from wordle.patterns import ALL_GREEN
@@ -19,6 +21,20 @@ from wordle.scoring import (
     hard_mode_guess_mask,
     rank_guesses,
 )
+
+
+def _game_fingerprint(
+    guesses: list[str],
+    answers: list[str],
+    priors: np.ndarray,
+) -> str:
+    h = hashlib.sha256()
+    h.update(word_list_fingerprint(guesses).encode("ascii"))
+    h.update(word_list_fingerprint(answers).encode("ascii"))
+    h.update(priors.dtype.str.encode("ascii"))
+    h.update(priors.shape[0].to_bytes(8, "little"))
+    h.update(np.ascontiguousarray(priors).tobytes())
+    return h.hexdigest()
 
 
 @dataclass
@@ -32,6 +48,7 @@ class GameData:
     g_idx: dict[str, int]
     a_idx: dict[str, int]  # answer word -> index in answers
     ans_in_guess: np.ndarray  # shape (|A|,), index into guesses
+    fingerprint: str
 
     @classmethod
     def load(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
@@ -41,7 +58,16 @@ class GameData:
         g_idx = word_index(guesses)
         a_idx = word_index(answers)
         ans_in_guess = np.array([g_idx[a] for a in answers], dtype=np.int64)
-        return cls(guesses, answers, table, priors, g_idx, a_idx, ans_in_guess)
+        return cls(
+            guesses,
+            answers,
+            table,
+            priors,
+            g_idx,
+            a_idx,
+            ans_in_guess,
+            _game_fingerprint(guesses, answers, priors),
+        )
 
     @classmethod
     def load_broad(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
@@ -55,7 +81,16 @@ class GameData:
         g_idx = word_index(guesses)
         a_idx = g_idx
         ans_in_guess = np.arange(len(guesses), dtype=np.int64)
-        return cls(guesses, guesses, table, priors, g_idx, a_idx, ans_in_guess)
+        return cls(
+            guesses,
+            guesses,
+            table,
+            priors,
+            g_idx,
+            a_idx,
+            ans_in_guess,
+            _game_fingerprint(guesses, guesses, priors),
+        )
 
     @property
     def is_broad(self) -> bool:
@@ -95,9 +130,7 @@ class SolverState:
             return hard_mode_guess_mask(self.game.guesses, self.history)
         return None
 
-    def rank(
-        self, top_n: int = 5
-    ) -> tuple[list[tuple[int, float]], np.ndarray]:
+    def rank(self, top_n: int = 5) -> tuple[list[tuple[int, float]], np.ndarray]:
         """Return (top-N (idx, score), full scores array)."""
         return rank_guesses(
             self.game.table,
@@ -120,9 +153,7 @@ class SolverState:
         """Candidate set empty — user must have entered wrong feedback."""
         return self.candidates_count == 0
 
-    def feedback_leaves_candidates(
-        self, guess_word: str, pattern: int
-    ) -> bool:
+    def feedback_leaves_candidates(self, guess_word: str, pattern: int) -> bool:
         """Would applying this (guess, pattern) leave at least one candidate?"""
         if guess_word not in self.game.g_idx:
             return False

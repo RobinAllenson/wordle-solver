@@ -29,9 +29,7 @@ class GuessStats:
     top_patterns: list[tuple[int, int, float]]  # (pattern, bucket size, mass fraction)
 
 
-def analyze_guess(
-    state: SolverState, guess_idx: int, score: float
-) -> GuessStats:
+def analyze_guess(state: SolverState, guess_idx: int, score: float) -> GuessStats:
     """Compute explanation-ready stats for one guess."""
     game = state.game
     word = game.guesses[guess_idx]
@@ -45,15 +43,11 @@ def analyze_guess(
     nonempty_idx = np.flatnonzero(sizes > 0)
     n_buckets = int(nonempty_idx.size)
     worst_next = int(sizes.max())
-    expected_next = (
-        float(((weights / total) * sizes).sum()) if total > 0 else 0.0
-    )
+    expected_next = float(((weights / total) * sizes).sum()) if total > 0 else 0.0
 
     is_in_S = word in game.a_idx and mask[game.a_idx[word]]
     win_prob = (
-        float(game.priors[game.a_idx[word]] / total)
-        if is_in_S and total > 0
-        else 0.0
+        float(game.priors[game.a_idx[word]] / total) if is_in_S and total > 0 else 0.0
     )
 
     # Letter coverage (unique letters only)
@@ -155,8 +149,8 @@ def _teaching_note(state: SolverState, stats: GuessStats) -> str:
         )
     if turns_left == 1:
         return (
-            f"Last turn — it's worth picking an actual candidate even if a "
-            f"non-candidate scored higher on information."
+            "Last turn — it's worth picking an actual candidate even if a "
+            "non-candidate scored higher on information."
         )
     if n > 150:
         return (
@@ -211,7 +205,7 @@ def _compare_verdict(picked: GuessStats, top: GuessStats) -> str:
                 f"Very close on information. Your {word_p} has a shot at "
                 f"solving this turn — that's often the right call near the end."
             )
-        return f"Margin is tiny. Either choice is defensible."
+        return "Margin is tiny. Either choice is defensible."
 
     if picked.worst_next >= top.worst_next * 1.8:
         return (
@@ -221,8 +215,14 @@ def _compare_verdict(picked: GuessStats, top: GuessStats) -> str:
 
     # Compare letter coverage: find a letter in top's guess that's more common
     # than any letter in picked's guess
-    best_top = max(top.letter_coverage, key=lambda x: x[1]) if top.letter_coverage else None
-    best_picked = max(picked.letter_coverage, key=lambda x: x[1]) if picked.letter_coverage else None
+    best_top = (
+        max(top.letter_coverage, key=lambda x: x[1]) if top.letter_coverage else None
+    )
+    best_picked = (
+        max(picked.letter_coverage, key=lambda x: x[1])
+        if picked.letter_coverage
+        else None
+    )
     if best_top and best_picked and best_top[1] > best_picked[1] + 0.1:
         return (
             f"{word_t} tests {best_top[0].upper()} which appears in "
@@ -239,9 +239,7 @@ def _compare_verdict(picked: GuessStats, top: GuessStats) -> str:
     )
 
 
-def render_comparison(
-    picked: GuessStats, picked_rank: int, top: GuessStats
-) -> Group:
+def render_comparison(picked: GuessStats, picked_rank: int, top: GuessStats) -> Group:
     """Side-by-side comparison of user's pick against the top suggestion."""
     tbl = Table(
         title=f"{picked.word.upper()} (your pick, rank #{picked_rank}) vs "
@@ -297,9 +295,7 @@ def render_comparison(
     return Group(tbl, Text(), verdict_panel)
 
 
-def detailed_explanation(
-    state: SolverState, stats: GuessStats
-) -> Group:
+def detailed_explanation(state: SolverState, stats: GuessStats) -> Group:
     """Full rationale panel for --why / /why command."""
     head = Text()
     head.append(f"{stats.word.upper()}", style="bold cyan")

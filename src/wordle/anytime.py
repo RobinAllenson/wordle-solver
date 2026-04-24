@@ -31,24 +31,33 @@ class AnytimeWorker:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._guess_idx: Optional[int] = None
+        self._generation = 0
 
     def start(self, guess_idx: int) -> None:
         """Begin speculating next-turn rankings for every probable feedback.
 
         No-op when |S| <= 2 (endgame is already instant)."""
         self.stop()
-        if int(self.state.mask.sum()) <= 2:
-            return
-        self._stop.clear()
+        stop_event = threading.Event()
         with self._lock:
+            self._generation += 1
+            generation = self._generation
             self._cache = {}
             self._guess_idx = guess_idx
+            self._stop = stop_event
+        if int(self.state.mask.sum()) <= 2:
+            return
         self._thread = threading.Thread(
-            target=self._run, args=(guess_idx,), daemon=True
+            target=self._run, args=(guess_idx, generation, stop_event), daemon=True
         )
         self._thread.start()
 
-    def _run(self, guess_idx: int) -> None:
+    def _run(
+        self,
+        guess_idx: int,
+        generation: int,
+        stop_event: threading.Event,
+    ) -> None:
         game = self.state.game
         mask = self.state.mask
         row = game.table[guess_idx, mask]
@@ -64,7 +73,7 @@ class AnytimeWorker:
         hard = self.state.hard_mode
 
         for pattern in order:
-            if self._stop.is_set():
+            if stop_event.is_set():
                 return
             p_int = int(pattern)
             if p_int == ALL_GREEN:
@@ -89,6 +98,8 @@ class AnytimeWorker:
                 top_n=5,
             )
             with self._lock:
+                if generation != self._generation or stop_event.is_set():
+                    return
                 self._cache[p_int] = (top, scores)
 
     def lookup(self, pattern: int) -> Optional[CachedEntry]:
@@ -96,9 +107,11 @@ class AnytimeWorker:
             return self._cache.get(int(pattern))
 
     def stop(self) -> None:
-        if self._thread and self._thread.is_alive():
-            self._stop.set()
-            self._thread.join(timeout=2.0)
+        thread = self._thread
+        stop_event = self._stop
+        if thread and thread.is_alive():
+            stop_event.set()
+            thread.join(timeout=2.0)
         self._thread = None
 
     @property

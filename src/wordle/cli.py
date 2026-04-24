@@ -9,7 +9,13 @@ from rich.text import Text
 
 from collections import Counter
 
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    MofNCompleteColumn,
+)
 
 from wordle.anytime import AnytimeWorker
 from wordle.explain import (
@@ -19,7 +25,7 @@ from wordle.explain import (
     one_liner,
     render_comparison,
 )
-from wordle.patterns import ALL_GREEN, decode_pattern, encode_feedback
+from wordle.patterns import decode_pattern, encode_feedback
 from wordle.play import HistoryKey, selfplay
 from wordle.solver import GameData, SolverState
 
@@ -88,12 +94,16 @@ def _ask_guess(
 ) -> str:
     default_word = state.game.guesses[ranked[0][0]]
     while True:
-        picked = typer.prompt(
-            f"Guess [blank = {default_word.upper()}, "
-            f"/why [N|WORD], /cands, /broad, /quit]",
-            default="",
-            show_default=False,
-        ).strip().lower()
+        picked = (
+            typer.prompt(
+                f"Guess [blank = {default_word.upper()}, "
+                f"/why [N|WORD], /cands, /broad, /quit]",
+                default="",
+                show_default=False,
+            )
+            .strip()
+            .lower()
+        )
         if not picked:
             return default_word
         if picked in ("/quit", "/q", "quit"):
@@ -186,20 +196,14 @@ def _recover_inconsistent_feedback(
         elif choice == "g":
             new_word = typer.prompt("actual guess word").strip().lower()
             if new_word not in state.game.g_idx:
-                console.print(
-                    f"[red]{new_word!r} not in guess list — try again[/red]"
-                )
+                console.print(f"[red]{new_word!r} not in guess list — try again[/red]")
                 continue
             word = new_word
         elif choice == "b":
             if state.game.is_broad:
-                console.print(
-                    "[red]Already using broad pool — must be a typo.[/red]"
-                )
+                console.print("[red]Already using broad pool — must be a typo.[/red]")
                 continue
-            with console.status(
-                "Building broad pattern table (one-time ~20s)…"
-            ):
+            with console.status("Building broad pattern table (one-time ~20s)…"):
                 broad = GameData.load_broad(alpha=alpha)
             state.switch_game(broad)
             console.print(
@@ -229,11 +233,7 @@ def play(
 ) -> None:
     """Solver assists you in a real Wordle game."""
     with console.status("Loading word lists + pattern table…"):
-        game = (
-            GameData.load_broad(alpha=alpha)
-            if broad
-            else GameData.load(alpha=alpha)
-        )
+        game = GameData.load_broad(alpha=alpha) if broad else GameData.load(alpha=alpha)
     state = SolverState(game, hard_mode=hard)
     console.print(
         f"[dim]{len(game.guesses)} guesses, {len(game.answers)} candidate answers"
@@ -249,10 +249,7 @@ def play(
         with console.status("Building broad pattern table (one-time ~20s)…"):
             b = GameData.load_broad(alpha=alpha)
         state.switch_game(b)
-        console.print(
-            f"[dim]widened to {state.candidates_count} "
-            f"candidates[/dim]"
-        )
+        console.print(f"[dim]widened to {state.candidates_count} candidates[/dim]")
 
     worker = AnytimeWorker(state)
     pre_ranked: tuple[list[tuple[int, float]], object] | None = None
@@ -278,9 +275,7 @@ def play(
 
         console.print(_render_suggestions(ranked, state))
         if used_cache:
-            console.print(
-                "[dim]⚡ top-5 served from anytime cache[/dim]"
-            )
+            console.print("[dim]⚡ top-5 served from anytime cache[/dim]")
 
         top_gi, top_score = ranked[0]
         top_stats = analyze_guess(state, top_gi, top_score)
@@ -356,26 +351,22 @@ def selfplay_cmd(
         console.print(f"[red]opener {opener_word!r} not in guess list[/red]")
         raise typer.Exit(code=1)
 
-    result = selfplay(
-        game, secret, hard_mode=hard, opener=opener_word
-    )
+    result = selfplay(game, secret, hard_mode=hard, opener=opener_word)
 
     console.print(f"Secret: [bold]{secret.upper()}[/bold]\n")
     for w, p in zip(result.words, result.patterns):
         console.print("  ", _render_tiles(w, p))
     if result.solved:
-        console.print(
-            f"\n[green]Solved in {result.n_guesses}.[/green]"
-        )
+        console.print(f"\n[green]Solved in {result.n_guesses}.[/green]")
     else:
-        console.print(
-            f"\n[red]Failed after {result.n_guesses} turns.[/red]"
-        )
+        console.print(f"\n[red]Failed after {result.n_guesses} turns.[/red]")
 
 
 @app.command("bench")
 def bench_cmd(
-    sample: int = typer.Option(None, "--sample", help="Random sample size; all if omitted."),
+    sample: int = typer.Option(
+        None, "--sample", help="Random sample size; all if omitted."
+    ),
     hard: bool = typer.Option(False, "--hard"),
     opener: str = typer.Option(None, "--opener"),
     alpha: float = typer.Option(1.0, "--alpha"),
@@ -410,9 +401,7 @@ def bench_cmd(
     ) as prog:
         task = prog.add_task("solving", total=len(words))
         for w in words:
-            r = selfplay(
-                game, w, hard_mode=hard, opener=opener_word, cache=cache
-            )
+            r = selfplay(game, w, hard_mode=hard, opener=opener_word, cache=cache)
             results.append(r)
             prog.advance(task)
 
@@ -421,10 +410,13 @@ def bench_cmd(
     n = len(results)
     fails = sum(1 for r in results if not r.solved)
     mean = sum(r.n_guesses for r in results if r.solved) / max(1, n - fails)
-    solved_counts = sorted(k for k in counts if k <= 6)
-    median = sorted(r.n_guesses for r in results if r.solved)[
-        (n - fails) // 2 if n - fails else 0
-    ] if (n - fails) else 0
+    median = (
+        sorted(r.n_guesses for r in results if r.solved)[
+            (n - fails) // 2 if n - fails else 0
+        ]
+        if (n - fails)
+        else 0
+    )
     max_g = max((r.n_guesses for r in results if r.solved), default=0)
 
     tbl = Table(title="Guess-count distribution", show_header=True, header_style="bold")
@@ -443,7 +435,7 @@ def bench_cmd(
     console.print(tbl)
     console.print(
         f"mean {mean:.3f}  median {median}  max {max_g}  "
-        f"fails {fails}/{n} ({fails/n:.1%})"
+        f"fails {fails}/{n} ({fails / n:.1%})"
         f"  · cache hits reused {len(cache)} unique states"
     )
 

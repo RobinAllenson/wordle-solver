@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from functools import lru_cache
+from itertools import combinations
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,7 @@ MAX_WORDLE_POSSIBLE_LIMIT = 5000
 DEFAULT_ENGLISH_CANDIDATE_LIMIT = 500
 MAX_ENGLISH_CANDIDATE_LIMIT = 1000
 MAX_ENGLISH_WORD_LENGTH = 32
+MAX_FEEDBACK_RELAXATION_VARIANTS = 4096
 
 EXAMPLE_HISTORY = "slate:bbgyb,crown:bgbbb"
 
@@ -370,6 +372,168 @@ def _matches_partial_feedback(guess: str, feedback: str, answer: str) -> bool:
     return True
 
 
+def _feedback_swap_positions(original: str, relaxed: str) -> list[int]:
+    return [
+        i + 1
+        for i, (original_ch, relaxed_ch) in enumerate(zip(original, relaxed))
+        if original_ch == "y" and relaxed_ch == "b"
+    ]
+
+
+def _relaxation_payload(
+    *,
+    applied: bool,
+    original_feedback: str,
+    effective_feedbacks: list[str] | None = None,
+    yellow_to_black_swaps: int = 0,
+    search_exhausted: bool = False,
+) -> dict[str, Any]:
+    effective_feedbacks = effective_feedbacks or [original_feedback]
+    return {
+        "applied": applied,
+        "original_feedback": original_feedback,
+        "effective_feedbacks": effective_feedbacks,
+        "yellow_to_black_swaps": yellow_to_black_swaps,
+        "variants": [
+            {
+                "feedback": feedback,
+                "swapped_positions": _feedback_swap_positions(
+                    original_feedback, feedback
+                ),
+            }
+            for feedback in effective_feedbacks[:25]
+        ],
+        "variants_truncated": len(effective_feedbacks) > 25,
+        "search_exhausted": search_exhausted,
+    }
+
+
+def _find_english_matches(
+    words: tuple[str, ...],
+    word_pattern: str,
+    guess: str,
+    feedback: str,
+) -> list[str]:
+    return [
+        word
+        for word in words
+        if (not word_pattern or _matches_word_pattern(word, word_pattern))
+        and (not guess or _matches_partial_feedback(guess, feedback, word))
+    ]
+
+
+def _exact_feedback_relaxed_matches(
+    words: tuple[str, ...],
+    word_pattern: str,
+    guess: str,
+    feedback: str,
+) -> tuple[list[str], dict[str, Any] | None]:
+    best_swap_count: int | None = None
+    matches: list[str] = []
+    effective_feedbacks: set[str] = set()
+
+    for word in words:
+        if word_pattern and not _matches_word_pattern(word, word_pattern):
+            continue
+        actual_feedback = _compute_feedback_text(guess, word)
+        swap_count = 0
+        for observed_ch, actual_ch in zip(feedback, actual_feedback):
+            if observed_ch == actual_ch:
+                continue
+            if observed_ch == "y" and actual_ch == "b":
+                swap_count += 1
+                continue
+            break
+        else:
+            if swap_count == 0:
+                continue
+            if best_swap_count is None or swap_count < best_swap_count:
+                best_swap_count = swap_count
+                matches = []
+                effective_feedbacks = set()
+            if swap_count == best_swap_count:
+                matches.append(word)
+                effective_feedbacks.add(actual_feedback)
+
+    if best_swap_count is None:
+        return [], None
+    return matches, _relaxation_payload(
+        applied=True,
+        original_feedback=feedback,
+        effective_feedbacks=sorted(effective_feedbacks),
+        yellow_to_black_swaps=best_swap_count,
+    )
+
+
+def _partial_feedback_relaxed_matches(
+    words: tuple[str, ...],
+    word_pattern: str,
+    guess: str,
+    feedback: str,
+) -> tuple[list[str], dict[str, Any] | None]:
+    yellow_positions = [i for i, ch in enumerate(feedback) if ch == "y"]
+    generated = 0
+    search_exhausted = False
+
+    for swap_count in range(1, len(yellow_positions) + 1):
+        variants: list[str] = []
+        for positions in combinations(yellow_positions, swap_count):
+            if generated >= MAX_FEEDBACK_RELAXATION_VARIANTS:
+                search_exhausted = True
+                break
+            chars = list(feedback)
+            for position in positions:
+                chars[position] = "b"
+            variants.append("".join(chars))
+            generated += 1
+        if not variants:
+            break
+
+        variant_matches: list[str] = []
+        used_variants: set[str] = set()
+        for word in words:
+            if word_pattern and not _matches_word_pattern(word, word_pattern):
+                continue
+            for variant in variants:
+                if _matches_partial_feedback(guess, variant, word):
+                    variant_matches.append(word)
+                    used_variants.add(variant)
+                    break
+        if variant_matches:
+            return variant_matches, _relaxation_payload(
+                applied=True,
+                original_feedback=feedback,
+                effective_feedbacks=sorted(used_variants),
+                yellow_to_black_swaps=swap_count,
+                search_exhausted=search_exhausted,
+            )
+        if search_exhausted:
+            break
+
+    return [], (
+        _relaxation_payload(
+            applied=False,
+            original_feedback=feedback,
+            search_exhausted=search_exhausted,
+        )
+        if search_exhausted
+        else None
+    )
+
+
+def _relaxed_english_matches(
+    words: tuple[str, ...],
+    word_pattern: str,
+    guess: str,
+    feedback: str,
+) -> tuple[list[str], dict[str, Any] | None]:
+    if not guess or "y" not in feedback:
+        return [], None
+    if "_" not in guess and "_" not in feedback:
+        return _exact_feedback_relaxed_matches(words, word_pattern, guess, feedback)
+    return _partial_feedback_relaxed_matches(words, word_pattern, guess, feedback)
+
+
 def _word_candidates_payload(words: list[str], limit: int) -> dict[str, Any]:
     returned = words[:limit]
     return {
@@ -584,24 +748,45 @@ def english_word_candidates(
         return _invalid_response(str(e))
 
     words = get_english_words_by_length(word_length)
-    matches = [
-        word
-        for word in words
-        if (not word_pattern or _matches_word_pattern(word, word_pattern))
-        and (not guess_word or _matches_partial_feedback(guess_word, feedback_text, word))
-    ]
+    matches = _find_english_matches(words, word_pattern, guess_word, feedback_text)
+    relaxation = _relaxation_payload(
+        applied=False,
+        original_feedback=feedback_text,
+    )
+    if not matches:
+        relaxed_matches, relaxed_payload = _relaxed_english_matches(
+            words,
+            word_pattern,
+            guess_word,
+            feedback_text,
+        )
+        if relaxed_payload is not None:
+            relaxation = relaxed_payload
+        if relaxed_matches:
+            matches = relaxed_matches
+
     candidates = _word_candidates_payload(list(matches), normalized_limit)
-    return {
-        "status": "ok",
-        "summary": (
+    if relaxation["applied"]:
+        swap_count = relaxation["yellow_to_black_swaps"]
+        summary = (
+            f"Found {len(matches)} English word{'s' if len(matches) != 1 else ''} "
+            f"after changing {swap_count} yellow tile"
+            f"{'s' if swap_count != 1 else ''} to black."
+        )
+    else:
+        summary = (
             f"Found {len(matches)} English word{'s' if len(matches) != 1 else ''} "
             f"matching the query."
-        ),
+        )
+    return {
+        "status": "ok",
+        "summary": summary,
         "corpus": "wordfreq:en:best",
         "word_length": word_length,
         "pattern": word_pattern,
         "guess": guess_word,
         "feedback": feedback_text,
+        "relaxation": relaxation,
         "limit_capped": limit_capped,
         "candidates": candidates,
     }

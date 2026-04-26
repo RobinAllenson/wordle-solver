@@ -131,6 +131,27 @@ def test_english_word_candidates_accepts_arbitrary_length_feedback():
 
     assert response["status"] == "ok"
     assert response["candidates"]["words"] == ["deposit"]
+    assert response["relaxation"]["applied"] is False
+
+
+def test_english_word_candidates_relaxes_yellow_to_black_when_no_exact_matches():
+    response = english_word_candidates(guess="fenotps", feedback="ygbgyyy")
+
+    assert response["status"] == "ok"
+    assert response["candidates"]["words"] == ["deposit"]
+    assert response["relaxation"]["applied"] is True
+    assert response["relaxation"]["yellow_to_black_swaps"] == 1
+    assert response["relaxation"]["effective_feedbacks"] == ["bgbgyyy"]
+
+
+def test_english_word_candidates_minimizes_yellow_to_black_relaxation():
+    response = english_word_candidates(guess="zzzzz", feedback="yybbb", limit=5)
+
+    assert response["status"] == "ok"
+    assert response["candidates"]["count"] > 0
+    assert response["relaxation"]["applied"] is True
+    assert response["relaxation"]["yellow_to_black_swaps"] == 2
+    assert response["relaxation"]["effective_feedbacks"] == ["bbbbb"]
 
 
 def test_english_word_candidates_allows_unknown_guess_letters_and_feedback():

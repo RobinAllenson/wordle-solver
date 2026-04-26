@@ -236,6 +236,47 @@ def _normalize_ascii_word(raw: str, field_name: str) -> str:
     return word
 
 
+def _normalize_partial_guess(raw: str) -> str:
+    guess = "".join(ch for ch in (raw or "").strip().lower() if not ch.isspace())
+    if not guess:
+        return ""
+    if len(guess) > MAX_ENGLISH_WORD_LENGTH:
+        raise WordleInputError(
+            f"guess must be at most {MAX_ENGLISH_WORD_LENGTH} characters"
+        )
+    for i, ch in enumerate(guess):
+        if ch == "_":
+            continue
+        if not ch.isascii() or not ch.isalpha():
+            raise WordleInputError(
+                f"invalid guess character {ch!r} at position {i + 1}; "
+                "use ASCII letters or '_' for unknown letters"
+            )
+    return guess
+
+
+def _normalize_partial_feedback(raw: str, expected_len: int) -> str:
+    text = (raw or "").strip().lower().replace(_VARIATION_SELECTOR, "")
+    text = "".join(ch for ch in text if not ch.isspace())
+    out: list[str] = []
+    for i, ch in enumerate(text):
+        if ch == "_":
+            out.append("_")
+            continue
+        mapped = _FEEDBACK_CHAR_MAP.get(ch)
+        if mapped is None:
+            raise WordleInputError(
+                f"invalid feedback character {ch!r} at position {i + 1}; "
+                "use b/y/g, '_', '.', '-', 'x', or Wordle square emoji"
+            )
+        out.append(mapped)
+    if len(out) != expected_len:
+        raise WordleInputError(
+            f"feedback must describe exactly {expected_len} tiles; got {len(out)} from {raw!r}"
+        )
+    return "".join(out)
+
+
 def _normalize_word_pattern(raw: str) -> str:
     pattern = "".join(ch for ch in (raw or "").strip().lower() if not ch.isspace())
     if not pattern:
@@ -278,6 +319,55 @@ def _compute_feedback_text(guess: str, answer: str) -> str:
             result[i] = "y"
             remaining[guess_ch] -= 1
     return "".join(result)
+
+
+def _matches_partial_feedback(guess: str, feedback: str, answer: str) -> bool:
+    """Return whether answer can match a partial guess/feedback observation.
+
+    Underscore in guess means the guessed letter is unknown. Underscore in
+    feedback means the feedback for that tile is unknown. Exact observations
+    keep using the full Wordle duplicate-letter algorithm.
+    """
+    if "_" not in guess and "_" not in feedback:
+        return _compute_feedback_text(guess, answer) == feedback
+
+    required_counts: Counter[str] = Counter()
+    grey_letters: set[str] = set()
+    has_unknown_guess = "_" in guess
+    unknown_feedback_letters = {
+        guess_ch
+        for guess_ch, feedback_ch in zip(guess, feedback)
+        if guess_ch != "_" and feedback_ch == "_"
+    }
+
+    for i, (guess_ch, feedback_ch) in enumerate(zip(guess, feedback)):
+        if guess_ch == "_" or feedback_ch == "_":
+            continue
+        if feedback_ch == "g":
+            if answer[i] != guess_ch:
+                return False
+            required_counts[guess_ch] += 1
+        elif feedback_ch == "y":
+            if answer[i] == guess_ch:
+                return False
+            required_counts[guess_ch] += 1
+        else:
+            if answer[i] == guess_ch:
+                return False
+            grey_letters.add(guess_ch)
+
+    answer_counts = Counter(answer)
+    for ch, count in required_counts.items():
+        if answer_counts[ch] < count:
+            return False
+
+    for ch in grey_letters:
+        if has_unknown_guess or ch in unknown_feedback_letters:
+            continue
+        if answer_counts[ch] != required_counts[ch]:
+            return False
+
+    return True
 
 
 def _word_candidates_payload(words: list[str], limit: int) -> dict[str, Any]:
@@ -469,12 +559,12 @@ def english_word_candidates(
     """Return broad English words matching a pattern and/or one feedback pair."""
     try:
         word_pattern = _normalize_word_pattern(pattern)
-        guess_word = _normalize_ascii_word(guess, "guess")
+        guess_word = _normalize_partial_guess(guess)
         has_feedback = bool((feedback or "").strip())
         if bool(guess_word) != has_feedback:
             raise WordleInputError("provide both guess and feedback, or neither")
         feedback_text = (
-            _normalize_feedback_text(feedback, expected_len=len(guess_word))
+            _normalize_partial_feedback(feedback, expected_len=len(guess_word))
             if guess_word
             else ""
         )
@@ -498,7 +588,7 @@ def english_word_candidates(
         word
         for word in words
         if (not word_pattern or _matches_word_pattern(word, word_pattern))
-        and (not guess_word or _compute_feedback_text(guess_word, word) == feedback_text)
+        and (not guess_word or _matches_partial_feedback(guess_word, feedback_text, word))
     ]
     candidates = _word_candidates_payload(list(matches), normalized_limit)
     return {

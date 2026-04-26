@@ -76,7 +76,9 @@ The canonical `history` format is compact and stateless:
 and returns possible answers without entropy-ranked next-guess suggestions.
 `english_word_candidates` is for broader English word lookup outside Wordle:
 use a pattern such as `_e_o___`, or a same-length guess/feedback pair such as
-`fenotps` + `bgbgyyy`.
+`fenotps` + `bgbgyyy`. In the broad English tool, `_` can also appear in the
+guess to mean an unknown guessed letter, or in the feedback to mean unknown
+feedback for that tile.
 
 The server starts with the curated 2,310-answer pool. If a valid history
 leaves no curated candidates, it automatically falls back to broad mode where

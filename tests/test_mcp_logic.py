@@ -133,6 +133,29 @@ def test_english_word_candidates_accepts_arbitrary_length_feedback():
     assert response["candidates"]["words"] == ["deposit"]
 
 
+def test_english_word_candidates_allows_unknown_guess_letters_and_feedback():
+    response = english_word_candidates(guess="fen_tps", feedback="bgb_yyy")
+
+    assert response["status"] == "ok"
+    assert "deposit" in response["candidates"]["words"]
+    assert response["guess"] == "fen_tps"
+    assert response["feedback"] == "bgb_yyy"
+
+
+def test_english_word_candidates_allows_unknown_feedback_for_known_guess():
+    response = english_word_candidates(guess="fenotps", feedback="bgb_y_y")
+
+    assert response["status"] == "ok"
+    assert "deposit" in response["candidates"]["words"]
+
+
+def test_english_word_candidates_allows_unknown_guess_with_known_feedback():
+    response = english_word_candidates(guess="_enotps", feedback="_gbgyyy")
+
+    assert response["status"] == "ok"
+    assert "deposit" in response["candidates"]["words"]
+
+
 def test_english_word_candidates_uses_wordle_duplicate_letter_rules():
     response = english_word_candidates(guess="geese", feedback="bygyb")
 

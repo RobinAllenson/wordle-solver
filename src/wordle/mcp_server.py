@@ -198,7 +198,9 @@ def compare_guess(
         "Use this for broad English word lookup outside the Wordle answer list. "
         "Pass a pattern such as '_e_o___' where '_' means unknown, or pass an "
         "arbitrary-length guess and b/y/g feedback pair such as guess='fenotps', "
-        "feedback='bgbgyyy'. The response is not a next-guess recommendation."
+        "feedback='bgbgyyy'. Underscore can also be used in guess for an unknown "
+        "letter and in feedback for unknown feedback. The response is not a "
+        "next-guess recommendation."
     ),
 )
 def find_english_word_candidates(
@@ -215,8 +217,8 @@ def find_english_word_candidates(
         str,
         Field(
             description=(
-                "Optional arbitrary-length word guess. If set, feedback must also "
-                "be set and must have the same length."
+                "Optional arbitrary-length word guess. Use '_' for unknown letters. "
+                "If set, feedback must also be set and must have the same length."
             )
         ),
     ] = "",
@@ -225,7 +227,7 @@ def find_english_word_candidates(
         Field(
             description=(
                 "Feedback for guess using b/y/g: b=absent, y=present elsewhere, "
-                "g=correct position."
+                "g=correct position, '_'=unknown feedback."
             )
         ),
     ] = "",

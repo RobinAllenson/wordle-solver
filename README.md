@@ -63,12 +63,20 @@ By default this starts a Streamable HTTP MCP endpoint at
 Tools:
 
 - `wordle_suggest_next_guess(history, hard_mode=false, top_n=5, include_all_candidates=false)`
+- `wordle_list_possible_answers(history, include_all_candidates=false, limit=100)`
 - `wordle_compare_guess(history, guess, hard_mode=false, top_n=5, include_all_candidates=false)`
+- `english_word_candidates(pattern="", guess="", feedback="", limit=500)`
 
 The canonical `history` format is compact and stateless:
 `slate:bbgyb,crown:bgbbb`. Feedback is five left-to-right tiles:
 `b` = grey/black/absent, `y` = yellow, `g` = green. Uppercase,
 `.`, `-`, `x`, and Wordle square emoji are accepted too.
+
+`wordle_list_possible_answers` uses only the curated 2,310-answer Wordle pool
+and returns possible answers without entropy-ranked next-guess suggestions.
+`english_word_candidates` is for broader English word lookup outside Wordle:
+use a pattern such as `_e_o___`, or a same-length guess/feedback pair such as
+`fenotps` + `bgbgyyy`.
 
 The server starts with the curated 2,310-answer pool. If a valid history
 leaves no curated candidates, it automatically falls back to broad mode where

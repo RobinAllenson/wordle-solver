@@ -6,9 +6,11 @@ import numpy as np
 
 from wordle.lists import word_index
 from wordle.mcp_logic import (
+    english_word_candidates,
     parse_history,
     serialize_history,
     wordle_compare_guess,
+    wordle_list_possible_answers,
     wordle_suggest_next_guess,
 )
 from wordle.patterns import build_pattern_table, compute_pattern, decode_pattern
@@ -101,3 +103,45 @@ def test_include_all_candidates_can_return_large_lists():
     assert len(response["candidates"]["words"]) == 2310
     assert response["candidates"]["truncated"] is False
     json.dumps(response)
+
+
+def test_wordle_list_possible_answers_omits_ranked_suggestions():
+    response = wordle_list_possible_answers("slate:bbgyb", limit=10)
+
+    assert response["status"] == "ok"
+    assert response["pool"] == "curated"
+    assert "suggestions" not in response
+    assert response["candidates"]["count"] == 19
+    assert len(response["candidates"]["words"]) == 10
+    assert response["candidates"]["truncated"] is True
+
+
+def test_english_word_candidates_accepts_known_letter_pattern():
+    response = english_word_candidates(pattern="_e_o___")
+
+    assert response["status"] == "ok"
+    assert response["word_length"] == 7
+    assert response["candidates"]["count"] > 0
+    assert "deposit" in response["candidates"]["words"]
+    json.dumps(response)
+
+
+def test_english_word_candidates_accepts_arbitrary_length_feedback():
+    response = english_word_candidates(guess="fenotps", feedback="bgbgyyy")
+
+    assert response["status"] == "ok"
+    assert response["candidates"]["words"] == ["deposit"]
+
+
+def test_english_word_candidates_uses_wordle_duplicate_letter_rules():
+    response = english_word_candidates(guess="geese", feedback="bygyb")
+
+    assert response["status"] == "ok"
+    assert "sheep" in response["candidates"]["words"]
+
+
+def test_english_word_candidates_rejects_mismatched_lengths():
+    response = english_word_candidates(pattern="_e_o___", guess="prier", feedback="gbygg")
+
+    assert response["status"] == "invalid_input"
+    assert "same length" in response["message"]

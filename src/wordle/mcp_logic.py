@@ -6,6 +6,7 @@ SolverState, then return JSON-serializable dicts that agents can use directly.
 
 from __future__ import annotations
 
+from collections import Counter
 from functools import lru_cache
 from typing import Any
 
@@ -20,6 +21,11 @@ MAX_HISTORY_CHARS = 4096
 MAX_TOP_N = 25
 DEFAULT_CANDIDATE_LIMIT = 25
 AUTO_ALL_CANDIDATE_THRESHOLD = 50
+DEFAULT_WORDLE_POSSIBLE_LIMIT = 100
+MAX_WORDLE_POSSIBLE_LIMIT = 5000
+DEFAULT_ENGLISH_CANDIDATE_LIMIT = 500
+MAX_ENGLISH_CANDIDATE_LIMIT = 1000
+MAX_ENGLISH_WORD_LENGTH = 32
 
 EXAMPLE_HISTORY = "slate:bbgyb,crown:bgbbb"
 
@@ -46,6 +52,7 @@ _FEEDBACK_CHAR_MAP = {
     "\u25fc": "b",  # black medium square
     "\u2b1a": "b",  # black small square
 }
+_WORD_PATTERN_WILDCARDS = {"_", "?", "."}
 
 
 class WordleInputError(ValueError):
@@ -65,7 +72,7 @@ def _invalid_response(message: str) -> dict[str, Any]:
     }
 
 
-def _normalize_feedback(raw: str) -> str:
+def _normalize_feedback_text(raw: str, expected_len: int) -> str:
     text = (raw or "").strip().lower().replace(_VARIATION_SELECTOR, "")
     text = "".join(ch for ch in text if not ch.isspace())
     out: list[str] = []
@@ -74,14 +81,18 @@ def _normalize_feedback(raw: str) -> str:
         if mapped is None:
             raise WordleInputError(
                 f"invalid feedback character {ch!r} at position {i + 1}; "
-                "use five characters from b/y/g, '.', '-', 'x', or Wordle square emoji"
+                "use b/y/g, '.', '-', 'x', or Wordle square emoji"
             )
         out.append(mapped)
-    if len(out) != 5:
+    if len(out) != expected_len:
         raise WordleInputError(
-            f"feedback must describe exactly 5 tiles; got {len(out)} from {raw!r}"
+            f"feedback must describe exactly {expected_len} tiles; got {len(out)} from {raw!r}"
         )
     return "".join(out)
+
+
+def _normalize_feedback(raw: str) -> str:
+    return _normalize_feedback_text(raw, expected_len=5)
 
 
 def parse_history(history: str) -> list[tuple[str, int]]:
@@ -145,6 +156,26 @@ def get_broad_game() -> GameData:
     return GameData.load_broad(alpha=1.0)
 
 
+@lru_cache(maxsize=MAX_ENGLISH_WORD_LENGTH)
+def get_english_words_by_length(length: int) -> tuple[str, ...]:
+    """Return broad English words of a given length in wordfreq order."""
+    from wordfreq import iter_wordlist
+
+    seen: set[str] = set()
+    words: list[str] = []
+    for raw in iter_wordlist("en", "best"):
+        word = raw.lower()
+        if (
+            len(word) == length
+            and word.isascii()
+            and word.isalpha()
+            and word not in seen
+        ):
+            seen.add(word)
+            words.append(word)
+    return tuple(words)
+
+
 def warm_caches(include_broad: bool = False) -> dict[str, Any]:
     """Load pattern tables so deploys can pay the cold-start cost upfront."""
     curated = get_curated_game()
@@ -175,6 +206,90 @@ def _normalize_top_n(top_n: int) -> tuple[int, bool]:
     return min(n, MAX_TOP_N), capped
 
 
+def _normalize_limit(
+    limit: int,
+    *,
+    default: int,
+    maximum: int,
+    field_name: str = "limit",
+) -> tuple[int, bool]:
+    try:
+        n = default if limit is None else int(limit)
+    except (TypeError, ValueError) as e:
+        raise WordleInputError(f"{field_name} must be an integer") from e
+    if n < 1:
+        raise WordleInputError(f"{field_name} must be at least 1")
+    capped = n > maximum
+    return min(n, maximum), capped
+
+
+def _normalize_ascii_word(raw: str, field_name: str) -> str:
+    word = (raw or "").strip().lower()
+    if not word:
+        return ""
+    if not word.isascii() or not word.isalpha():
+        raise WordleInputError(f"{field_name} must contain only ASCII letters")
+    if len(word) > MAX_ENGLISH_WORD_LENGTH:
+        raise WordleInputError(
+            f"{field_name} must be at most {MAX_ENGLISH_WORD_LENGTH} letters"
+        )
+    return word
+
+
+def _normalize_word_pattern(raw: str) -> str:
+    pattern = "".join(ch for ch in (raw or "").strip().lower() if not ch.isspace())
+    if not pattern:
+        return ""
+    if len(pattern) > MAX_ENGLISH_WORD_LENGTH:
+        raise WordleInputError(
+            f"pattern must be at most {MAX_ENGLISH_WORD_LENGTH} characters"
+        )
+    for i, ch in enumerate(pattern):
+        if ch in _WORD_PATTERN_WILDCARDS:
+            continue
+        if not ch.isascii() or not ch.isalpha():
+            raise WordleInputError(
+                f"invalid pattern character {ch!r} at position {i + 1}; "
+                "use ASCII letters for known positions and '_' for unknown positions"
+            )
+    return pattern
+
+
+def _matches_word_pattern(word: str, pattern: str) -> bool:
+    return all(
+        pattern_ch in _WORD_PATTERN_WILDCARDS or word_ch == pattern_ch
+        for word_ch, pattern_ch in zip(word, pattern)
+    )
+
+
+def _compute_feedback_text(guess: str, answer: str) -> str:
+    """Compute b/y/g feedback for any equal-length guess and answer."""
+    result = ["b"] * len(guess)
+    remaining: Counter[str] = Counter()
+    for i, guess_ch in enumerate(guess):
+        if guess_ch == answer[i]:
+            result[i] = "g"
+        else:
+            remaining[answer[i]] += 1
+    for i, guess_ch in enumerate(guess):
+        if result[i] == "g":
+            continue
+        if remaining[guess_ch] > 0:
+            result[i] = "y"
+            remaining[guess_ch] -= 1
+    return "".join(result)
+
+
+def _word_candidates_payload(words: list[str], limit: int) -> dict[str, Any]:
+    returned = words[:limit]
+    return {
+        "count": len(words),
+        "words": returned,
+        "truncated": len(words) > len(returned),
+        "limit": limit,
+    }
+
+
 def _build_state(game: GameData, turns: list[tuple[str, int]], hard_mode: bool) -> SolverState:
     state = SolverState(game, hard_mode=hard_mode)
     for turn_number, (word, pattern) in enumerate(turns, start=1):
@@ -201,19 +316,22 @@ def _resolve_state(
 def _candidate_payload(
     state: SolverState,
     include_all_candidates: bool,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     count = state.candidates_count
-    if include_all_candidates or count <= AUTO_ALL_CANDIDATE_THRESHOLD:
-        limit = None
+    if include_all_candidates or (
+        limit is None and count <= AUTO_ALL_CANDIDATE_THRESHOLD
+    ):
+        effective_limit = None
     else:
-        limit = DEFAULT_CANDIDATE_LIMIT
+        effective_limit = limit or DEFAULT_CANDIDATE_LIMIT
 
-    words = state.candidates(limit=limit)
+    words = state.candidates(limit=effective_limit)
     return {
         "count": count,
         "words": words,
-        "truncated": limit is not None and count > len(words),
-        "limit": limit,
+        "truncated": effective_limit is not None and count > len(words),
+        "limit": effective_limit,
         "include_all_requested": include_all_candidates,
     }
 
@@ -274,6 +392,128 @@ def _base_response(
         "used_broad_fallback": used_broad_fallback,
         "top_n_capped": top_n_capped,
         "candidates": _candidate_payload(state, include_all_candidates),
+    }
+
+
+def wordle_list_possible_answers(
+    history: str,
+    include_all_candidates: bool = False,
+    limit: int = DEFAULT_WORDLE_POSSIBLE_LIMIT,
+) -> dict[str, Any]:
+    """Return possible curated Wordle answers without ranking next guesses."""
+    try:
+        normalized_limit, limit_capped = _normalize_limit(
+            limit,
+            default=DEFAULT_WORDLE_POSSIBLE_LIMIT,
+            maximum=MAX_WORDLE_POSSIBLE_LIMIT,
+        )
+        turns = parse_history(history)
+        state = _build_state(get_curated_game(), turns, hard_mode=False)
+    except WordleInputError as e:
+        return _invalid_response(str(e))
+
+    candidates = _candidate_payload(
+        state,
+        include_all_candidates=include_all_candidates,
+        limit=normalized_limit,
+    )
+
+    if turns and turns[-1][1] == ALL_GREEN:
+        word = turns[-1][0]
+        return {
+            "status": "solved",
+            "summary": f"{word.upper()} is marked all green; the puzzle is solved.",
+            "history": serialize_history(turns),
+            "turns_used": len(turns),
+            "pool": "curated",
+            "limit_capped": limit_capped,
+            "solution": word,
+            "candidates": candidates,
+        }
+
+    if state.candidates_count == 0:
+        return {
+            "status": "inconsistent_feedback",
+            "summary": (
+                "No curated Wordle answer matches this history. "
+                "At least one guess or color is probably wrong, or the answer "
+                "is outside the curated Wordle answer list."
+            ),
+            "history": serialize_history(turns),
+            "turns_used": len(turns),
+            "pool": "curated",
+            "limit_capped": limit_capped,
+            "candidates": candidates,
+        }
+
+    return {
+        "status": "ok",
+        "summary": (
+            f"Found {state.candidates_count} possible curated Wordle "
+            f"answer{'s' if state.candidates_count != 1 else ''}."
+        ),
+        "history": serialize_history(turns),
+        "turns_used": len(turns),
+        "pool": "curated",
+        "limit_capped": limit_capped,
+        "candidates": candidates,
+    }
+
+
+def english_word_candidates(
+    pattern: str = "",
+    guess: str = "",
+    feedback: str = "",
+    limit: int = DEFAULT_ENGLISH_CANDIDATE_LIMIT,
+) -> dict[str, Any]:
+    """Return broad English words matching a pattern and/or one feedback pair."""
+    try:
+        word_pattern = _normalize_word_pattern(pattern)
+        guess_word = _normalize_ascii_word(guess, "guess")
+        has_feedback = bool((feedback or "").strip())
+        if bool(guess_word) != has_feedback:
+            raise WordleInputError("provide both guess and feedback, or neither")
+        feedback_text = (
+            _normalize_feedback_text(feedback, expected_len=len(guess_word))
+            if guess_word
+            else ""
+        )
+        if not word_pattern and not guess_word:
+            raise WordleInputError(
+                "provide a word pattern like '_e_o___' or a guess with feedback"
+            )
+        if word_pattern and guess_word and len(word_pattern) != len(guess_word):
+            raise WordleInputError("pattern, guess, and feedback must have the same length")
+        word_length = len(word_pattern or guess_word)
+        normalized_limit, limit_capped = _normalize_limit(
+            limit,
+            default=DEFAULT_ENGLISH_CANDIDATE_LIMIT,
+            maximum=MAX_ENGLISH_CANDIDATE_LIMIT,
+        )
+    except WordleInputError as e:
+        return _invalid_response(str(e))
+
+    words = get_english_words_by_length(word_length)
+    matches = [
+        word
+        for word in words
+        if (not word_pattern or _matches_word_pattern(word, word_pattern))
+        and (not guess_word or _compute_feedback_text(guess_word, word) == feedback_text)
+    ]
+    candidates = _word_candidates_payload(list(matches), normalized_limit)
+    return {
+        "status": "ok",
+        "summary": (
+            f"Found {len(matches)} English word{'s' if len(matches) != 1 else ''} "
+            f"matching the query."
+        ),
+        "corpus": "wordfreq:en:best",
+        "word_length": word_length,
+        "pattern": word_pattern,
+        "guess": guess_word,
+        "feedback": feedback_text,
+        "limit_capped": limit_capped,
+        "candidates": candidates,
     }
 
 

@@ -13,7 +13,7 @@ the strategy as to run it.
   `|S_next|`, and a context-aware strategy note (e.g. "Early game: spread
   across common letters, not guess the answer").
 - **Self-play and bench** — solver guesses a known or random answer; or
-  iterates the full 2,310-word answer list and prints a guess-count
+  iterates the full 3,158-word answer list and prints a guess-count
   histogram.
 - **Hard mode** — toggle with `--hard`; enforces green-stays-put and
   yellow-must-appear (with correct multiplicity) on the guess set.
@@ -72,7 +72,7 @@ The canonical `history` format is compact and stateless:
 `b` = grey/black/absent, `y` = yellow, `g` = green. Uppercase,
 `.`, `-`, `x`, and Wordle square emoji are accepted too.
 
-`wordle_list_possible_answers` uses only the curated 2,310-answer Wordle pool
+`wordle_list_possible_answers` uses only the curated 3,158-answer Wordle pool
 and returns possible answers without entropy-ranked next-guess suggestions.
 `english_word_candidates` is for broader English word lookup outside Wordle:
 use a pattern such as `_e_o___`, or a same-length guess/feedback pair such as
@@ -80,9 +80,13 @@ use a pattern such as `_e_o___`, or a same-length guess/feedback pair such as
 guess to mean an unknown guessed letter, or in the feedback to mean unknown
 feedback for that tile.
 
-The server starts with the curated 2,310-answer pool. If a valid history
+The server starts with the curated 3,158-answer pool. If a valid history
 leaves no curated candidates, it automatically falls back to broad mode where
-every valid guess can be an answer. Broad mode uses a separate on-disk pattern
+every valid guess can be an answer. After each unsolved history, responses also
+report matching accepted guesses outside the active answer pool in
+`candidates.outside_pool`. These are diagnostic possibilities, not equally likely
+answers. A singleton or perfect split is only a claim about the active pool.
+This check does not build the broad pattern table. Broad mode uses a separate on-disk pattern
 cache of roughly 220 MB, so warm it during deployment if you want to avoid the
 first fallback request paying the build cost:
 
@@ -110,7 +114,7 @@ For each possible guess `g` and the current set of still-possible answers
 5. When `|S| ≤ 2`, restrict the ranking to `S` — we should be trying to
    win this turn.
 
-A precomputed `|guesses| × |answers|` `uint8` pattern table (≈33 MB)
+A precomputed `|guesses| × |answers|` `uint8` pattern table (≈47 MB)
 makes each scoring pass a handful of NumPy `bincount` calls.
 
 ## Benchmark
@@ -143,8 +147,8 @@ src/wordle/
   play.py       self-play driver with memoised top-picks
   cli.py        typer entry point
 data/
-  answers.txt   2,310 candidate answers
-  guesses.txt   14,854 NYT valid-guess list
+  answers.txt   3,158 candidate answers
+  guesses.txt   14,855 NYT valid-guess list
   patterns.npy  cached pattern table (built on first run)
 tests/          pytest suite
 ```
@@ -157,4 +161,4 @@ uv run pytest
 
 Word lists are vendored from:
 - [tabatkins/wordle-list](https://github.com/tabatkins/wordle-list) — NYT valid guesses
-- Original Wordle answer list (pre-NYT, 2,310 words)
+- [Alex Selby’s July 2023 candidate snapshot](https://github.com/alex1770/wordle/blob/main/wordlist_nyt20230701_hidden) — 3,158 candidates; see `src/wordle/data/SOURCES.md`. This is not guaranteed to match the current NYT editorial pool.

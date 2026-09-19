@@ -228,7 +228,7 @@ def play(
     broad: bool = typer.Option(
         False,
         "--broad",
-        help="Start with full guess list as candidate pool (slower, always correct).",
+        help="Start with full guess list as candidate pool (slower; limited to accepted guesses).",
     ),
 ) -> None:
     """Solver assists you in a real Wordle game."""

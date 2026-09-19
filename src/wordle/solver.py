@@ -73,8 +73,8 @@ class GameData:
     def load_broad(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
         """Broader answer pool: every valid guess is a candidate answer.
 
-        Use when the real answer may lie outside the curated 2,310 list
-        (e.g. a post-NYT-curation word). Slower but always correct."""
+        Use when the real answer may lie outside the curated 3,158 list
+        (e.g. a post-NYT-curation word). Slower; still limited by the vendored accepted-guess list."""
         guesses, _ = load_lists()
         table = load_broad_table(guesses, verbose=verbose)
         priors = load_priors(guesses, alpha=alpha)

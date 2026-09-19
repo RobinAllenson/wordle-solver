@@ -141,7 +141,7 @@ def load_broad_table(
     """Build/load a |G|x|G| pattern table — every guess vs every guess.
 
     ~220 MB uint8, ~20s to build. Used when the real NYT answer might be
-    outside the curated 2,310-word pool.
+    outside the curated 3,158-word pool.
     """
     cache_path = cache_path or (CACHE_DIR / "patterns_broad.npy")
     expected_shape = (len(guesses), len(guesses))

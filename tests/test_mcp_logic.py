@@ -50,7 +50,7 @@ def test_suggest_opening_guess_shape():
 
     assert response["status"] == "ok"
     assert response["pool"] == "curated"
-    assert response["candidates"]["count"] == 2310
+    assert response["candidates"]["count"] == 3158
     assert len(response["suggestions"]) == 3
     assert len(response["suggestions"][0]["word"]) == 5
 
@@ -99,8 +99,8 @@ def test_include_all_candidates_can_return_large_lists():
     response = wordle_suggest_next_guess("", include_all_candidates=True, top_n=1)
 
     assert response["status"] == "ok"
-    assert response["candidates"]["count"] == 2310
-    assert len(response["candidates"]["words"]) == 2310
+    assert response["candidates"]["count"] == 3158
+    assert len(response["candidates"]["words"]) == 3158
     assert response["candidates"]["truncated"] is False
     json.dumps(response)
 
@@ -111,7 +111,7 @@ def test_wordle_list_possible_answers_omits_ranked_suggestions():
     assert response["status"] == "ok"
     assert response["pool"] == "curated"
     assert "suggestions" not in response
-    assert response["candidates"]["count"] == 19
+    assert response["candidates"]["count"] == 24
     assert len(response["candidates"]["words"]) == 10
     assert response["candidates"]["truncated"] is True
 
@@ -189,3 +189,31 @@ def test_english_word_candidates_rejects_mismatched_lengths():
 
     assert response["status"] == "invalid_input"
     assert "same length" in response["message"]
+
+
+def test_waken_remains_possible_through_real_game():
+    history = "slate:bbyby,brond:bbbyb,aheap:ybybb"
+    response = wordle_list_possible_answers(history, include_all_candidates=True)
+    assert set(response["candidates"]["words"]) == {"maven", "waken", "waxen"}
+    response = wordle_list_possible_answers(history + ",waxen:ggbgg")
+    assert response["candidates"]["words"] == ["waken"]
+
+
+def test_singleton_reports_matching_words_outside_pool(monkeypatch):
+    import wordle.mcp_logic as logic
+
+    game = _make_game(["slate", "brond", "aheap", "waxen", "waken"], ["waxen"])
+    monkeypatch.setattr(logic, "get_curated_game", lambda: game)
+
+    def no_broad_table():
+        raise AssertionError("diagnostics should not build the broad table")
+
+    monkeypatch.setattr(logic, "get_broad_game", no_broad_table)
+    history = "slate:bbyby,brond:bbbyb,aheap:ybybb"
+    for response in [logic.wordle_suggest_next_guess(history),
+                     logic.wordle_compare_guess(history, "waxen")]:
+        assert response["candidates"]["words"] == ["waxen"]
+        assert response["candidates"]["outside_pool"]["words"] == ["waken"]
+        assert "pool only" in response["summary"]
+    listed = logic.wordle_list_possible_answers(history)
+    assert listed["candidates"]["outside_pool"]["words"] == ["waken"]

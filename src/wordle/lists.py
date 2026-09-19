@@ -40,19 +40,28 @@ def load_lists(
     return guesses, answers
 
 
-def load_priors(answers: list[str], alpha: float = 1.0) -> np.ndarray:
-    """Probability distribution over answers, proportional to zipf_frequency^alpha.
+def load_priors(answers: list[str], alpha: float = 0.0) -> np.ndarray:
+    """Uniform answer probabilities by default; optional corpus-frequency heuristic.
 
-    Zipf frequencies are log10-scaled (typical English words: 3-7). We convert
-    to linear frequency before weighting. alpha=1 means "weight by true frequency";
-    alpha=0 gives uniform; alpha>1 sharpens toward common words.
+    English usage frequency is not a calibrated probability of NYT selection.
+    alpha=0 makes no preference within the chosen pool; alpha=1 explicitly
+    restores the old raw-frequency heuristic (10**max(zipf_frequency, 1)).
+    Intermediate values temper that heuristic. None is an official NYT prior.
     """
+    if not answers:
+        raise ValueError("answer pool must not be empty")
+    if not np.isfinite(alpha) or alpha < 0:
+        raise ValueError("alpha must be finite and nonnegative")
+    if alpha == 0:
+        return np.full(len(answers), 1.0 / len(answers), dtype=np.float64)
+
     from wordfreq import zipf_frequency
 
     zipf = np.array([zipf_frequency(w, "en") for w in answers], dtype=np.float64)
     # Floor so unknown words (zipf==0) still get a tiny nonzero weight
-    linear = 10.0 ** np.maximum(zipf, 1.0)
-    weights = linear**alpha
+    log_weights = np.maximum(zipf, 1.0)
+    # Subtract the maximum before exponentiating to avoid overflow.
+    weights = 10.0 ** ((log_weights - log_weights.max()) * alpha)
     weights /= weights.sum()
     return weights
 

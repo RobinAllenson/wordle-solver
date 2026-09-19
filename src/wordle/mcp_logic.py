@@ -150,12 +150,12 @@ def serialize_history(turns: list[tuple[str, int]]) -> str:
 
 @lru_cache(maxsize=1)
 def get_curated_game() -> GameData:
-    return GameData.load(alpha=1.0)
+    return GameData.load()
 
 
 @lru_cache(maxsize=1)
 def get_broad_game() -> GameData:
-    return GameData.load_broad(alpha=1.0)
+    return GameData.load_broad()
 
 
 @lru_cache(maxsize=MAX_ENGLISH_WORD_LENGTH)

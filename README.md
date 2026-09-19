@@ -1,7 +1,7 @@
 # wordle
 
 A Wordle solver that explains *why* it picks each guess. Built around
-frequency-weighted information-gain — but the point is as much to teach
+information gain with uniform answer priors by default — but the point is as much to teach
 the strategy as to run it.
 
 ## What it does
@@ -105,9 +105,14 @@ For each possible guess `g` and the current set of still-possible answers
 
 1. Partition `S` into up to 243 buckets by the feedback pattern each answer
    would produce.
-2. Weight each answer by its prior — `zipf_frequency(w, 'en')` raised to
-   `α` (default 1.0) — so common words count more. This matches NYT's
-   observed bias toward everyday words.
+2. Give each candidate answer equal probability by default (`α=0`). English
+   usage frequency is not a calibrated probability of selection by NYT.
+   CLI users can opt into the old heuristic with `--alpha 1`, or temper it
+   with a value between 0 and 1. The optional weights are proportional to
+   `10 ** (α * max(zipf_frequency(w, 'en'), 1))`, not powers of Zipf scores.
+   MCP and Python defaults use uniform priors, including broad fallback.
+   Reported win probabilities are conditional model probabilities, not
+   calibrated predictions of NYT editorial choices.
 3. Score each guess by the weighted entropy of its bucket distribution.
 4. Tiebreak in favour of guesses that are themselves possible answers
    (could win outright).
@@ -119,7 +124,8 @@ makes each scoring pass a handful of NumPy `bincount` calls.
 
 ## Benchmark
 
-On the 2,310-word answer list, default α=1.0:
+Historical benchmark with the old frequency-weighted setting (`--alpha 1`),
+not the new uniform default, on the 2,310-word answer list:
 
 ```
 guesses   count   histogram

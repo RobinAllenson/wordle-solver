@@ -30,7 +30,7 @@ from wordle.play import HistoryKey, selfplay
 from wordle.solver import GameData, SolverState
 
 app = typer.Typer(
-    help="Wordle solver with frequency-weighted entropy.",
+    help="Wordle solver with entropy and configurable answer priors.",
     no_args_is_help=True,
 )
 console = Console()
@@ -221,9 +221,10 @@ def _recover_inconsistent_feedback(
 def play(
     hard: bool = typer.Option(False, "--hard", help="Play in hard mode."),
     alpha: float = typer.Option(
-        1.0,
+        0.0,
         "--alpha",
-        help="Frequency-prior exponent. 0 = uniform, 1 = raw frequency weighting.",
+        min=0.0,
+        help="Answer-prior exponent: 0 = uniform (default), 1 = uncalibrated corpus frequency.",
     ),
     broad: bool = typer.Option(
         False,
@@ -329,7 +330,7 @@ def selfplay_cmd(
     secret: str = typer.Argument(None, help="Secret word; random answer if omitted."),
     hard: bool = typer.Option(False, "--hard"),
     opener: str = typer.Option(None, "--opener", help="Force a specific opening word."),
-    alpha: float = typer.Option(1.0, "--alpha"),
+    alpha: float = typer.Option(0.0, "--alpha", min=0.0),
     seed: int = typer.Option(None, "--seed"),
 ) -> None:
     """Solver plays itself against a secret word."""
@@ -369,7 +370,7 @@ def bench_cmd(
     ),
     hard: bool = typer.Option(False, "--hard"),
     opener: str = typer.Option(None, "--opener"),
-    alpha: float = typer.Option(1.0, "--alpha"),
+    alpha: float = typer.Option(0.0, "--alpha", min=0.0),
     seed: int = typer.Option(0, "--seed"),
 ) -> None:
     """Run self-play over many answers and print the guess-count distribution."""

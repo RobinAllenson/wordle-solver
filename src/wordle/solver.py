@@ -51,7 +51,7 @@ class GameData:
     fingerprint: str
 
     @classmethod
-    def load(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
+    def load(cls, alpha: float = 0.0, verbose: bool = False) -> "GameData":
         guesses, answers = load_lists()
         table = load_pattern_table(guesses, answers, verbose=verbose)
         priors = load_priors(answers, alpha=alpha)
@@ -70,7 +70,7 @@ class GameData:
         )
 
     @classmethod
-    def load_broad(cls, alpha: float = 1.0, verbose: bool = False) -> "GameData":
+    def load_broad(cls, alpha: float = 0.0, verbose: bool = False) -> "GameData":
         """Broader answer pool: every valid guess is a candidate answer.
 
         Use when the real answer may lie outside the curated 3,158 list

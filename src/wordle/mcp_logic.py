@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 
 from wordle.explain import GuessStats, analyze_guess, analyze_word
-from wordle.patterns import ALL_GREEN, decode_pattern, encode_feedback
+from wordle.patterns import ALL_GREEN, compute_pattern, decode_pattern, encode_feedback
 from wordle.solver import GameData, SolverState
 
 MAX_TURNS = 6
@@ -150,12 +150,12 @@ def serialize_history(turns: list[tuple[str, int]]) -> str:
 
 @lru_cache(maxsize=1)
 def get_curated_game() -> GameData:
-    return GameData.load(alpha=1.0)
+    return GameData.load()
 
 
 @lru_cache(maxsize=1)
 def get_broad_game() -> GameData:
-    return GameData.load_broad(alpha=1.0)
+    return GameData.load_broad()
 
 
 @lru_cache(maxsize=MAX_ENGLISH_WORD_LENGTH)
@@ -581,12 +581,29 @@ def _candidate_payload(
         effective_limit = limit or DEFAULT_CANDIDATE_LIMIT
 
     words = state.candidates(limit=effective_limit)
+    # A nonempty curated pool does not prove that the real answer is in it.
+    # Check only the played rows, avoiding the expensive full broad table.
+    outside = []
+    if state.history and not state.is_solved() and not state.game.is_broad:
+        outside = [
+            word for word in state.game.guesses
+            if word not in state.game.a_idx
+            and all(compute_pattern(guess, word) == pattern
+                    for guess, pattern in state.history)
+        ]
+    outside_words = outside if effective_limit is None else outside[:effective_limit]
     return {
         "count": count,
         "words": words,
         "truncated": effective_limit is not None and count > len(words),
         "limit": effective_limit,
         "include_all_requested": include_all_candidates,
+        "scope": "active answer pool; not guaranteed to cover all NYT answers",
+        "outside_pool": {
+            "count": len(outside),
+            "words": outside_words,
+            "truncated": len(outside_words) < len(outside),
+        },
     }
 
 
@@ -636,6 +653,13 @@ def _base_response(
     top_n_capped: bool,
     include_all_candidates: bool,
 ) -> dict[str, Any]:
+    candidates = _candidate_payload(state, include_all_candidates)
+    if candidates["outside_pool"]["count"]:
+        summary += (
+            f" Counts and scores apply to the {pool} pool only; "
+            f"{candidates['outside_pool']['count']} other accepted guesses "
+            "also match the feedback (see candidates.outside_pool)."
+        )
     return {
         "status": status,
         "summary": summary,
@@ -645,7 +669,7 @@ def _base_response(
         "pool": pool,
         "used_broad_fallback": used_broad_fallback,
         "top_n_capped": top_n_capped,
-        "candidates": _candidate_payload(state, include_all_candidates),
+        "candidates": candidates,
     }
 
 
